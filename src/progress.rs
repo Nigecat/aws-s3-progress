@@ -1,21 +1,23 @@
-use std::convert::Infallible;
-use std::mem;
-
-// use aws_sdk_s3::client::customize::orchestrator::CustomizableOperation;
+use aws_sdk_s3::client::customize::orchestrator::CustomizableOperation;
 use aws_sdk_s3::primitives::SdkBody;
 use aws_smithy_http::body::BoxBody;
 use bytes::Bytes;
 use http::{HeaderMap, Request};
 use http_body::{Body, SizeHint};
 use pin_project::pin_project;
+
+use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use aws_sdk_s3::operation::put_object::builders::PutObjectFluentBuilder;
-use aws_sdk_s3::operation::put_object::PutObjectOutput;
-
 /// (chunk size (diff), total written, data size)
 pub type HookFunction = fn(usize, u64, u64);
+
+pub trait TrackableRequest<R> {
+    fn track(self, hook: HookFunction) -> Self;
+}
+
+// ----------------------------------------------------------------------------------------
 
 #[pin_project]
 struct ProgressBody<T> {
@@ -87,31 +89,19 @@ where
     }
 }
 
-#[async_trait::async_trait]
-pub trait TrackableRequest<R> {
-    async fn send_tracked(self, hook: HookFunction) -> Result<R, aws_sdk_s3::Error>;
-}
-
 // ----------------------------------------------------------------------------------------
 
-// #[async_trait::async_trait]
-// impl<T, E, B> TrackableRequest<T> for CustomizableOperation<T, E, B>
-// where
-//     T: Send + Sync,
-// {
-//     async fn send_tracked(self, hook: HookFunction) -> Result<T, aws_sdk_s3::Error> {
-//         unimplemented!();
-//     }
-// }
-
-#[async_trait::async_trait]
-impl TrackableRequest<PutObjectOutput> for PutObjectFluentBuilder {
-    async fn send_tracked(self, hook: HookFunction) -> Result<PutObjectOutput, aws_sdk_s3::Error> {
-        Ok(self
-            .customize()
-            .await?
-            .map_request::<_, Infallible>(move |req| Ok(ProgressBody::<()>::patch(req, hook)))
-            .send()
-            .await?)
+impl<T, E, B> TrackableRequest<T> for CustomizableOperation<T, E, B>
+where
+    T: Send,
+    E: Send + Sync + std::error::Error + 'static,
+    B: Send,
+{
+    fn track(self, hook: HookFunction) -> Self {
+        self.map_request(move |req| {
+            Ok::<http::Request<aws_sdk_s3::primitives::SdkBody>, E>(ProgressBody::<()>::patch(
+                req, hook,
+            ))
+        })
     }
 }
