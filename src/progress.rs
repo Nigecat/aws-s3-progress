@@ -1,12 +1,11 @@
-//! hook function: (chunk size (diff), total written, data size)
-
 use std::convert::Infallible;
 use std::mem;
 
+// use aws_sdk_s3::client::customize::orchestrator::CustomizableOperation;
 use aws_sdk_s3::primitives::SdkBody;
 use aws_smithy_http::body::BoxBody;
 use bytes::Bytes;
-use http::HeaderMap;
+use http::{HeaderMap, Request};
 use http_body::{Body, SizeHint};
 use pin_project::pin_project;
 use std::pin::Pin;
@@ -15,6 +14,7 @@ use std::task::{Context, Poll};
 use aws_sdk_s3::operation::put_object::builders::PutObjectFluentBuilder;
 use aws_sdk_s3::operation::put_object::PutObjectOutput;
 
+/// (chunk size (diff), total written, data size)
 pub type HookFunction = fn(usize, u64, u64);
 
 #[pin_project]
@@ -34,6 +34,20 @@ impl<T> ProgressBody<T> {
             written: 0,
             length,
         }
+    }
+
+    fn patch(mut req: Request<SdkBody>, hook: HookFunction) -> Request<SdkBody> {
+        // Extract current request body so we can modify it
+        let body = mem::replace(req.body_mut(), SdkBody::taken()).map(move |body| {
+            let len = body.content_length().unwrap_or(0);
+            let body = ProgressBody::new(body, hook, len);
+            SdkBody::from_dyn(BoxBody::new(body))
+        });
+
+        // Replace existing request body
+        let _ = mem::replace(req.body_mut(), body);
+
+        req
     }
 }
 
@@ -80,25 +94,23 @@ pub trait TrackableRequest<R> {
 
 // ----------------------------------------------------------------------------------------
 
+// #[async_trait::async_trait]
+// impl<T, E, B> TrackableRequest<T> for CustomizableOperation<T, E, B>
+// where
+//     T: Send + Sync,
+// {
+//     async fn send_tracked(self, hook: HookFunction) -> Result<T, aws_sdk_s3::Error> {
+//         unimplemented!();
+//     }
+// }
+
 #[async_trait::async_trait]
 impl TrackableRequest<PutObjectOutput> for PutObjectFluentBuilder {
     async fn send_tracked(self, hook: HookFunction) -> Result<PutObjectOutput, aws_sdk_s3::Error> {
         Ok(self
             .customize()
             .await?
-            .map_request::<_, Infallible>(move |mut req| {
-                // Extract current request body so we can modify it
-                let body = mem::replace(req.body_mut(), SdkBody::taken()).map(move |body| {
-                    let len = body.content_length().unwrap_or(0);
-                    let body = ProgressBody::new(body, hook, len);
-                    SdkBody::from_dyn(BoxBody::new(body))
-                });
-
-                // Replace existing request body
-                let _ = mem::replace(req.body_mut(), body);
-
-                Ok(req)
-            })
+            .map_request::<_, Infallible>(move |req| Ok(ProgressBody::<()>::patch(req, hook)))
             .send()
             .await?)
     }
