@@ -15,20 +15,19 @@ use std::task::{Context, Poll};
 use aws_sdk_s3::operation::put_object::builders::PutObjectFluentBuilder;
 use aws_sdk_s3::operation::put_object::PutObjectOutput;
 
+pub type HookFunction = fn(usize, u64, u64);
+
 #[pin_project]
-struct ProgressBody<T, F> {
+struct ProgressBody<T> {
     #[pin]
     inner: T,
-    hook: F,
+    hook: HookFunction,
     written: u64,
     length: u64,
 }
 
-impl<T, F> ProgressBody<T, F>
-where
-    F: 'static,
-{
-    fn new(inner: T, hook: F, length: u64) -> Self {
+impl<T> ProgressBody<T> {
+    fn new(inner: T, hook: HookFunction, length: u64) -> Self {
         ProgressBody {
             inner,
             hook,
@@ -38,10 +37,9 @@ where
     }
 }
 
-impl<T, F> Body for ProgressBody<T, F>
+impl<T> Body for ProgressBody<T>
 where
     T: Body<Data = Bytes, Error = aws_smithy_http::body::Error>,
-    F: Fn(usize, u64, u64) -> () + Send + 'static,
 {
     type Data = Bytes;
     type Error = aws_smithy_http::body::Error;
@@ -77,23 +75,18 @@ where
 
 #[async_trait::async_trait]
 pub trait TrackableRequest<R> {
-    async fn send_tracked<F>(self, hook: F) -> Result<R, aws_sdk_s3::Error>
-    where
-        F: Fn(usize, u64, u64) -> () + Send + Sync + 'static;
+    async fn send_tracked(self, hook: HookFunction) -> Result<R, aws_sdk_s3::Error>;
 }
 
 // ----------------------------------------------------------------------------------------
 
 #[async_trait::async_trait]
 impl TrackableRequest<PutObjectOutput> for PutObjectFluentBuilder {
-    async fn send_tracked<F>(self, hook: F) -> Result<PutObjectOutput, aws_sdk_s3::Error>
-    where
-        F: Fn(usize, u64, u64) -> () + Send + Sync + 'static,
-    {
+    async fn send_tracked(self, hook: HookFunction) -> Result<PutObjectOutput, aws_sdk_s3::Error> {
         Ok(self
             .customize()
             .await?
-            .map_request::<_, Infallible>(|mut req| {
+            .map_request::<_, Infallible>(move |mut req| {
                 // Extract current request body so we can modify it
                 let body = mem::replace(req.body_mut(), SdkBody::taken()).map(move |body| {
                     let len = body.content_length().unwrap_or(0);

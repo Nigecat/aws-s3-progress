@@ -15,7 +15,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         .bucket("bucket")
         .key("key")
         .body(body)
-        .send_tracked(&|chunk, current, total| println!("{current}/{total} ({chunk})"))
+        .send_tracked(|chunk, current, total| println!("{current}/{total} ({chunk})"))
         .await
         .unwrap();
 
