@@ -1,7 +1,5 @@
-mod progress;
-
+use aws_s3_progress::TrackableRequest;
 use aws_sdk_s3::primitives::ByteStream;
-use progress::TrackableRequest;
 
 #[tokio::main]
 #[allow(clippy::result_large_err)]
