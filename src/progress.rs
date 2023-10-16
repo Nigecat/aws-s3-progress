@@ -15,7 +15,7 @@ use std::task::{Context, Poll};
 pub type HookFunction<T> = fn(&T, usize, u64, u64);
 
 pub trait TrackableRequest {
-    fn track<T>(self, data: T, hook: HookFunction<T>) -> Self
+    fn track<T>(self, data: Arc<T>, hook: HookFunction<T>) -> Self
     where
         T: Send + Sync + 'static;
 }
@@ -105,11 +105,10 @@ where
     E: Send + Sync + std::error::Error + 'static,
     B: Send,
 {
-    fn track<T>(self, data: T, hook: HookFunction<T>) -> Self
+    fn track<T>(self, data: Arc<T>, hook: HookFunction<T>) -> Self
     where
         T: Send + Sync + 'static,
     {
-        let data = Arc::new(data);
         self.map_request(move |req| {
             Ok::<http::Request<aws_sdk_s3::primitives::SdkBody>, E>(ProgressBody::<(), T>::patch(
                 req,
