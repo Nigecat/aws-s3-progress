@@ -1,6 +1,6 @@
 use aws_s3_progress::TrackableRequest;
 use aws_sdk_s3::primitives::ByteStream;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 #[tokio::main]
 #[allow(clippy::result_large_err)]
@@ -18,7 +18,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         // ----------------
         .customize() // internally, this function is a) not-async and b) always returns Ok(), so the next line is somewhat redundant
         .await?
-        .track(Arc::new(Mutex::new(0)), |data, chunk, current, total| {
+        .track(Mutex::new(0), |data, chunk, current, total| {
             let mut i = data.lock().unwrap();
             *i += 1;
             println!("{current}/{total} ({chunk}) | DATA: ${i}")
