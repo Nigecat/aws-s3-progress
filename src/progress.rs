@@ -13,7 +13,7 @@ use std::task::{Context, Poll};
 /// (chunk size (diff), total written, data size)
 pub type HookFunction = fn(usize, u64, u64);
 
-pub trait TrackableRequest<R> {
+pub trait TrackableRequest {
     fn track(self, hook: HookFunction) -> Self;
 }
 
@@ -91,7 +91,7 @@ where
 
 // ----------------------------------------------------------------------------------------
 
-impl<T, E, B> TrackableRequest<T> for CustomizableOperation<T, E, B>
+impl<T, E, B> TrackableRequest for CustomizableOperation<T, E, B>
 where
     T: Send,
     E: Send + Sync + std::error::Error + 'static,
