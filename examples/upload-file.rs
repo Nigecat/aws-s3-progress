@@ -15,7 +15,7 @@ async fn main() -> Result<(), aws_sdk_s3::Error> {
         .key("key")
         .body(body)
         // ----------------
-        .customize() // internally, this function is a) not-async and b) always returns Ok(), so the next two lines are somewhat redundant
+        .customize() // internally, this function is a) not-async and b) always returns Ok(), so the next line is somewhat redundant
         .await?
         .track(|chunk, current, total| println!("{current}/{total} ({chunk})"))
         // ----------------
